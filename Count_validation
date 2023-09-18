@@ -1,0 +1,56 @@
+from logging import exception
+from databricks import sql
+import pyodbc
+import pandas as pd
+import warnings
+warnings.filterwarnings("ignore")
+# outputs_of_mst=pd.DataFrame() 
+
+odbc_driver='ODBC Driver 17 for SQL Server'
+
+tables=['afw_policytransaction','afw_transaction','afw_invoicetransaction','afw_invoicecommission','afw_invoice','afw_generalledgerdivision','afw_generalledgergroup','afw_generalledgerdepartment','afw_generalledgerbranch',
+'afw_location','afw_lobsetup','afw_policytranpremium','afw_clocation','afw_cprem',
+'ps_lu_casetype','ps_lu_workflow','transaction','transactionadditionaldata','case','note','xlu_coll_tickettype','xlu_coll_ticketstatus',
+'xlu_coll_ticketworkflowstep','ps_ticket_org','ps_case_history','ps_lu_casestatus','ps_lu_transaction_types']
+
+def databricks():
+    host="bolt-analyticsprod.cloud.databricks.com"
+    http_path="sql/protocolv1/o/3158924937735331/0914-072437-cwq0vku"#_QA_cluster
+    access_token="dapicb69299bf00f93c358540bfbf746845c"#_QA_access_token 
+    connection = sql.connect(
+    server_hostname=host,
+    http_path=http_path,
+    access_token=access_token)
+    return connection
+
+def query_exe():
+ conxn=databricks()
+ df_exel=pd.DataFrame(columns=["cust","table_name","src_cnt","tgt_cnt","conxn","DB"])
+ for tab in tables:
+    cust=[2,14,13,11,9,24,30]
+    for cust in cust:
+        try:
+            qry=f""" select conxn , db from  adp_core.test.ods_max_version where target_table='{tab}' and customer_id ={cust} limit 1"""
+            df1=pd.read_sql(qry,conxn)
+            server_names=df1['conxn'].to_string(index=False)
+            DB_names=df1['db'].to_string(index=False)
+            # print(server_names)
+            cnxn = pyodbc.connect(f"""Driver={odbc_driver};Server={server_names};Database={DB_names};Trusted_Connection=yes""")
+            query2=f"""select count(1) Counts from {tab}"""
+            cur=cnxn.cursor()
+            df1=cur.execute(query2)
+            df=df1.fetchall()
+            count_src=str((df[0][0]))
+            qry=f""" select count(*) cnt from adp_core.dl{cust}.{tab}"""
+            df1=pd.read_sql(qry,conxn) 
+            count_tgt=df1['cnt'][0]
+            df_exel=df_exel.append({"cust":cust,"table_name":tab,"src_cnt":count_src,"tgt_cnt":count_tgt,"conxn":server_names,"DB":DB_names},ignore_index=True)
+            print(server_names+" |"+DB_names+"| "+str(cust)+"| "+tab+" |"+count_src )
+            
+        except Exception as e :
+            print(tab+"  > "+str(cust))
+            print(e)
+ file_path="""E:\\ShivanandK\\Workflow_Finance(18_9_2023).xlsx"""
+ df_exel.to_excel(file_path,index=False)
+
+query_exe()
